@@ -123,8 +123,9 @@ complete minimal Python node and the raw libzmq calls this framework's
 and the language never matters again — including the original
 [ruby_zmq_framework](https://github.com/pgdaniel/ruby_zmq_framework) and
 its [Zig](https://github.com/pgdaniel/zig_zmq_framework),
-[Rust](https://github.com/pgdaniel/rust_zmq_framework), and
-[Node](https://github.com/pgdaniel/node_zmq_framework) ports, which all
+[Rust](https://github.com/pgdaniel/rust_zmq_framework),
+[Node](https://github.com/pgdaniel/node_zmq_framework), and
+[C++](https://github.com/pgdaniel/cpp_zmq_framework) ports, which all
 speak the exact same wire format.
 [flow_viewer](https://github.com/pgdaniel/flow_viewer) can view and edit
 any of their `flow.yml` files.
