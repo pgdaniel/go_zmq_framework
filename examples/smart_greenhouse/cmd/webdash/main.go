@@ -86,7 +86,7 @@ func main() {
 
 	port := os.Getenv("WEB_PORT")
 	if port == "" {
-		port = "4568"
+		port = "4569"
 	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

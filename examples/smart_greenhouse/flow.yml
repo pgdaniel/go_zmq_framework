@@ -5,7 +5,7 @@
 # sensors simulates the greenhouse and reacts to actuator commands (a real
 # feedback loop), controller closes the loop with climate rules, logger
 # taps the wire for stats, and webdash serves a live dashboard with a
-# manual "irrigate now" button on http://localhost:4568.
+# manual "irrigate now" button on http://localhost:4569.
 
 nodes:
   sensors:
@@ -22,7 +22,7 @@ nodes:
     cmd: bin/webdash
     publishes: [actuator_command]
     subscribes: [sensor_reading]
-    env: { WEB_PORT: "4568" }
+    env: { WEB_PORT: "4569" }
 
   logger:
     cmd: bin/logger
