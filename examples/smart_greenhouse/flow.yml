@@ -1,0 +1,29 @@
+# Sample app: smart greenhouse. Build then run from the repo root:
+#   go build -o examples/smart_greenhouse/bin/ ./examples/smart_greenhouse/cmd/...
+#   bin/flowctl examples/smart_greenhouse/flow.yml
+#
+# sensors simulates the greenhouse and reacts to actuator commands (a real
+# feedback loop), controller closes the loop with climate rules, logger
+# taps the wire for stats, and webdash serves a live dashboard with a
+# manual "irrigate now" button on http://localhost:4568.
+
+nodes:
+  sensors:
+    cmd: bin/sensors
+    publishes: [sensor_reading]
+    subscribes: [actuator_command]
+
+  controller:
+    cmd: bin/controller
+    publishes: [actuator_command]
+    subscribes: [sensor_reading]
+
+  webdash:
+    cmd: bin/webdash
+    publishes: [actuator_command]
+    subscribes: [sensor_reading]
+    env: { WEB_PORT: "4568" }
+
+  logger:
+    cmd: bin/logger
+    subscribes: [sensor_reading, actuator_command]
