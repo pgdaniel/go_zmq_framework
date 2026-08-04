@@ -7,6 +7,7 @@
 //	flowctl other.yml
 //	flowctl --plan       # print computed wiring, run nothing
 //	flowctl --graph      # print the topology as JSON, run nothing
+//	flowctl --live :5656 # run flow and serve SSE stream on :5656
 package main
 
 import (
@@ -16,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -35,6 +37,7 @@ type exited struct {
 func main() {
 	planOnly := flag.Bool("plan", false, "Print the computed wiring and exit")
 	graphOnly := flag.Bool("graph", false, "Print the node topology as JSON and exit")
+	liveAddr := flag.String("live", "", "Serve SSE stream on this address (e.g. :5656)")
 	flag.Parse()
 
 	manifest := "flow.yml"
@@ -132,6 +135,84 @@ func main() {
 	}
 	fmt.Printf("[flowctl] started %d nodes: %s\n", len(children), joinNames(names))
 
+	// Start live SSE server if requested
+	var liveStop func()
+	if *liveAddr != "" {
+		peers := make([]string, 0, len(ports))
+		for _, port := range ports {
+			peers = append(peers, fmt.Sprintf("127.0.0.1:%d", port))
+		}
+
+		clients := make(map[chan []byte]struct{})
+		var clientsMu sync.Mutex
+
+		liveStop, err = framework.TapAll(peers, func(topic string, payload []byte) {
+			msg := map[string]any{"topic": topic, "payload": json.RawMessage(payload)}
+			data, _ := json.Marshal(msg)
+			clientsMu.Lock()
+			defer clientsMu.Unlock()
+			for ch := range clients {
+				select {
+				case ch <- data:
+				default:
+					// Slow client, drop message
+				}
+			}
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[flowctl] failed to start tap: %v\n", err)
+		} else {
+			mux := http.NewServeMux()
+
+			mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				w.Header().Set("Cache-Control", "no-cache")
+				w.Header().Set("Connection", "keep-alive")
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+
+				flusher, ok := w.(http.Flusher)
+				if !ok {
+					http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+					return
+				}
+
+				ch := make(chan []byte, 64)
+				clientsMu.Lock()
+				clients[ch] = struct{}{}
+				clientsMu.Unlock()
+
+				defer func() {
+					clientsMu.Lock()
+					delete(clients, ch)
+					clientsMu.Unlock()
+				}()
+
+				for {
+					select {
+					case data := <-ch:
+						fmt.Fprintf(w, "data: %s\n\n", data)
+						flusher.Flush()
+					case <-r.Context().Done():
+						return
+					}
+				}
+			})
+
+			mux.HandleFunc("/graph", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+				json.NewEncoder(w).Encode(flow.Graph())
+			})
+
+			go func() {
+				fmt.Printf("[flowctl] live server listening on %s\n", *liveAddr)
+				if err := http.ListenAndServe(*liveAddr, mux); err != nil {
+					fmt.Fprintf(os.Stderr, "[flowctl] live server error: %v\n", err)
+				}
+			}()
+		}
+	}
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
@@ -144,6 +225,9 @@ func main() {
 
 		case <-sigCh:
 			fmt.Printf("\n[flowctl] shutting down %d nodes\n", remaining)
+			if liveStop != nil {
+				liveStop()
+			}
 			for _, c := range children {
 				if c.cmd.Process != nil {
 					_ = c.cmd.Process.Signal(syscall.SIGTERM)
@@ -153,6 +237,9 @@ func main() {
 			fmt.Println("[flowctl] all nodes exited")
 			return
 		}
+	}
+	if liveStop != nil {
+		liveStop()
 	}
 	fmt.Println("[flowctl] all nodes exited")
 }

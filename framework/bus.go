@@ -366,3 +366,66 @@ func zmqError(action string) error {
 	msg := C.GoString(C.zmq_strerror(C.zmq_errno()))
 	return fmt.Errorf("[Framework Error] ZeroMQ %s failed: %s", action, msg)
 }
+
+// TapAll creates a raw SUB socket that connects to all peers and subscribes
+// to every topic at the ZMQ level (unlike Bus, which filters by exact topic
+// match in deliver). The callback receives each [topic, payload] frame pair.
+// Returns a closer function that stops the listener and releases resources.
+// Useful for tooling (e.g. flowctl --live) that needs to observe all traffic
+// without participating in a specific node's subscription set.
+func TapAll(peers []string, callback func(topic string, payload []byte)) (stop func(), err error) {
+	ctx := C.zmq_ctx_new()
+	if ctx == nil {
+		return nil, zmqError("ctx_new")
+	}
+
+	subSock := C.zmq_socket(ctx, C.ZMQ_SUB)
+	if subSock == nil {
+		C.zmq_ctx_term(ctx)
+		return nil, zmqError("socket(SUB)")
+	}
+
+	for _, peer := range peers {
+		endpoint := peerEndpoint(peer)
+		if rc := zmqConnect(subSock, endpoint); rc != 0 {
+			C.zmq_close(subSock)
+			C.zmq_ctx_term(ctx)
+			return nil, zmqError("connect to " + endpoint)
+		}
+	}
+
+	if rc := zmqSubscribeAll(subSock); rc != 0 {
+		C.zmq_close(subSock)
+		C.zmq_ctx_term(ctx)
+		return nil, zmqError("subscribe")
+	}
+
+	stopCh := make(chan struct{})
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-stopCh:
+				return
+			default:
+			}
+
+			topic, payload, ok := recvFrames(subSock)
+			if !ok {
+				continue
+			}
+			callback(topic, payload)
+		}
+	}()
+
+	return func() {
+		close(stopCh)
+		<-done
+		zero := C.int(0)
+		C.zmq_setsockopt(subSock, C.ZMQ_LINGER, unsafe.Pointer(&zero), C.size_t(unsafe.Sizeof(zero)))
+		C.zmq_close(subSock)
+		C.zmq_ctx_term(ctx)
+	}, nil
+}
