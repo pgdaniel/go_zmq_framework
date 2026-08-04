@@ -1,0 +1,34 @@
+# Sample app: multi-zone greenhouse. Build then run from the repo root:
+#   go build -o examples/greenhouse_multi_zone/bin/ ./examples/greenhouse_multi_zone/cmd/...
+#   bin/flowctl examples/greenhouse_multi_zone/flow.yml
+#
+# Demonstrates topic naming conventions and multi-zone patterns: each zone
+# has its own sensors and command topics (zone_a_reading, zone_b_reading,
+# zone_a_command, zone_b_command). An aggregator combines both zones into
+# a single combined_reading for the dashboard.
+
+nodes:
+  zone_a:
+    cmd: bin/zone_a
+    publishes: [zone_a_reading]
+    subscribes: [zone_a_command]
+
+  zone_b:
+    cmd: bin/zone_b
+    publishes: [zone_b_reading]
+    subscribes: [zone_b_command]
+
+  zone_controller:
+    cmd: bin/zone_controller
+    publishes: [zone_a_command, zone_b_command]
+    subscribes: [zone_a_reading, zone_b_reading]
+
+  aggregator:
+    cmd: bin/aggregator
+    publishes: [combined_reading]
+    subscribes: [zone_a_reading, zone_b_reading]
+
+  webdash:
+    cmd: bin/webdash
+    subscribes: [combined_reading]
+    env: { WEB_PORT: "4571" }

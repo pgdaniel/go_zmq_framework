@@ -1,0 +1,29 @@
+# Sample app: greenhouse with alerting. Build then run from the repo root:
+#   go build -o examples/greenhouse_alerts/bin/ ./examples/greenhouse_alerts/cmd/...
+#   bin/flowctl examples/greenhouse_alerts/flow.yml
+#
+# Demonstrates the alerting pattern: sensors publish readings, monitor
+# checks thresholds and publishes alerts, alerter sends notifications,
+# webdash shows alerts with acknowledge buttons. Acknowledgments flow
+# back to the monitor to clear alerts.
+
+nodes:
+  sensors:
+    cmd: bin/sensors
+    publishes: [sensor_reading]
+    subscribes: [alert_acknowledge]
+
+  monitor:
+    cmd: bin/monitor
+    publishes: [alert]
+    subscribes: [sensor_reading, alert_acknowledge]
+
+  alerter:
+    cmd: bin/alerter
+    subscribes: [alert]
+
+  webdash:
+    cmd: bin/webdash
+    publishes: [alert_acknowledge]
+    subscribes: [alert]
+    env: { WEB_PORT: "4570" }
